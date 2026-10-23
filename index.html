@@ -362,6 +362,7 @@
     <div class="ptitle"><button class="back" data-back aria-label="Back">&#8592;</button><h2 class="skew">Settings</h2></div>
     <div class="scroll">
       <button class="toggle" id="setSound" aria-pressed="true"><span>Sound<small>Engine, wind, near misses and crashes</small></span><span class="sw2"></span></button>
+      <button class="toggle" id="setMusic" aria-pressed="true"><span>Music<small>Driving beat in menus and races</small></span><span class="sw2"></span></button>
       <button class="toggle" id="setAuto" aria-pressed="false"><span>Auto accelerate<small>Drive forward without holding gas</small></span><span class="sw2"></span></button>
       <button class="toggle" id="setQuality" aria-pressed="true"><span>High graphics<small>Shadows and sharper picture. Turn off if the game feels slow</small></span><span class="sw2"></span></button>
       <button class="toggle" id="setCam" aria-pressed="false"><span>Far camera<small>See more of the road behind your car</small></span><span class="sw2"></span></button>
@@ -426,7 +427,7 @@
   const save = {
     coins: 500, owned: ['rookie'], car: 'rookie', paint: {}, upgrades: {},
     best: { oneway: 0, twoway: 0, time: 0 }, mode: 'oneway', tod: 'random',
-    settings: { sound: true, auto: isTouch, quality: !isTouch, farCam: false },
+    settings: { sound: true, music: true, auto: isTouch, quality: !isTouch, farCam: false },
     goals: null,
   };
   try {
@@ -1141,6 +1142,39 @@
     click: () => sfxTone([880], 0.05, 'square', 0.04),
     cash: () => sfxTone([784, 988, 1175, 1568], 0.2, 'triangle', 0.08, 0.08),
   };
+  // ---------- Music: a small step sequencer (kick, clap, hats, bass) on the audio clock ----------
+  const BPM = 124, STEP = 60 / BPM / 4;
+  const BASS = [[110, 110, 0, 110, 0, 110, 131, 0], [87.3, 87.3, 0, 87.3, 0, 87.3, 98, 0], [131, 131, 0, 131, 0, 131, 147, 0], [98, 98, 0, 98, 0, 98, 123, 0]];
+  let musicBus = null, nextStep = 0, stepN = 0;
+  function musicTick() {
+    if (!audio) return;
+    if (!musicBus) { musicBus = audio.createGain(); musicBus.gain.value = 0; musicBus.connect(audio.master); nextStep = audio.currentTime + 0.1; }
+    const want = save.settings.music && save.settings.sound ? (state === 'play' || state === 'countdown' ? 0.32 : 0.18) : 0;
+    musicBus.gain.setTargetAtTime(want, audio.currentTime, 0.4);
+    if (want === 0) { nextStep = audio.currentTime + 0.1; return; }
+    while (nextStep < audio.currentTime + 0.25) {
+      const t = nextStep, i = stepN % 16, bar = Math.floor(stepN / 16) % 4;
+      if (i % 4 === 0) { // kick
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+        g.gain.setValueAtTime(0.55, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        o.connect(g); g.connect(musicBus); o.start(t); o.stop(t + 0.24);
+      }
+      const hit = (type, f, dur, vol) => { const src = audio.createBufferSource(), fl = audio.createBiquadFilter(), g = audio.createGain(); src.buffer = noiseBuf; fl.type = type; fl.frequency.value = f; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur); src.connect(fl); fl.connect(g); g.connect(musicBus); src.start(t, Math.random(), dur + 0.02); };
+      if (i === 4 || i === 12) hit('bandpass', 1800, 0.16, 0.35);   // clap
+      if (i % 2 === 1) hit('highpass', 7000, 0.04, i % 4 === 3 ? 0.16 : 0.08); // hats
+      const note = BASS[bar][Math.floor(i / 2)];
+      if (note && i % 2 === 0) {
+        const o = audio.createOscillator(), f = audio.createBiquadFilter(), g = audio.createGain();
+        o.type = 'sawtooth'; o.frequency.value = note; f.type = 'lowpass'; f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(220, t + STEP * 1.8);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + STEP * 1.9);
+        o.connect(f); f.connect(g); g.connect(musicBus); o.start(t); o.stop(t + STEP * 2);
+      }
+      nextStep += STEP; stepN++;
+    }
+  }
+  setInterval(musicTick, 100);
+
   function updateAudio() {
     if (!audio || !eng) return;
     const t = audio.currentTime, on = save.settings.sound && state === 'play';
@@ -1288,6 +1322,7 @@
     if (!$('scrGoals').hidden) renderGoals();
     $('setSound').setAttribute('aria-pressed', String(save.settings.sound));
     $('setAuto').setAttribute('aria-pressed', String(save.settings.auto));
+    $('setMusic').setAttribute('aria-pressed', String(save.settings.music));
     $('setQuality').setAttribute('aria-pressed', String(save.settings.quality));
     $('setCam').setAttribute('aria-pressed', String(save.settings.farCam));
   }
@@ -1301,6 +1336,7 @@
   document.querySelectorAll('#todChips .chip').forEach((c) => c.addEventListener('click', () => { save.tod = c.dataset.tod; persist(); applyTimeOfDay(save.tod); refreshMenus(); sfx.click(); }));
   const toggleSetting = (id, key, after) => $(id).addEventListener('click', () => { save.settings[key] = !save.settings[key]; persist(); refreshMenus(); if (after) after(); sfx.click(); });
   toggleSetting('setSound', 'sound');
+  toggleSetting('setMusic', 'music');
   toggleSetting('setAuto', 'auto', () => { $('gasBtn').hidden = save.settings.auto; });
   toggleSetting('setQuality', 'quality', applyQuality);
   toggleSetting('setCam', 'farCam');

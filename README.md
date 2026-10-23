@@ -40,7 +40,7 @@ Three challenges a day, such as "make 15 near misses in one run" or "reach 280 k
 | Nitro | NOS | `Shift` / `Space` |
 | Pause | ☰ | `Esc` or `P` |
 
-Settings: sound, auto accelerate, high or low graphics, and a far camera.
+Settings: sound, music, auto accelerate, high or low graphics, and a far camera. After a crash you can pay coins to continue the same run.
 
 ## How the downloads are built
 `.github/workflows/build-release.yml` wraps the game with Capacitor for Android and with Electron for Windows (see `desktop/`), then publishes both files as a GitHub release.
