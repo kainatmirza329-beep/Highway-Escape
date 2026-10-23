@@ -1,0 +1,19 @@
+{
+  "name": "highway-escape",
+  "productName": "Highway Escape",
+  "version": "1.0.0",
+  "description": "Highway Escape by AZARR Motors",
+  "author": "AZARR",
+  "main": "main.js",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.azarr.highwayescape",
+    "productName": "Highway Escape",
+    "files": ["main.js", "index.html", "three.min.js"],
+    "win": { "target": "portable" },
+    "portable": { "artifactName": "Highway-Escape.exe" }
+  }
+}

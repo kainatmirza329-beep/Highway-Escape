@@ -1,0 +1,110 @@
+name: Build APK and EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        run: |
+          SDK="${ANDROID_HOME:-$HOME/android-sdk}"
+          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            mkdir -p "$SDK/cmdline-tools"
+            curl -sSL -o /tmp/tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            unzip -q /tmp/tools.zip -d "$SDK/cmdline-tools"
+            mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+          fi
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+      - name: Collect game files
+        run: |
+          mkdir -p www
+          cp index.html three.min.js www/
+
+      - name: Wrap the game in a Capacitor Android app
+        run: |
+          npm init -y > /dev/null
+          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          npx cap init "Highway Escape" com.azarr.highwayescape --web-dir www
+          npx cap add android
+          # Play in landscape
+          sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape"/' android/app/src/main/AndroidManifest.xml
+          npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../Highway-Escape.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: Highway-Escape.apk
+
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Build portable Windows EXE with Electron
+        shell: bash
+        run: |
+          cp index.html three.min.js desktop/
+          cd desktop
+          npm install
+          npx electron-builder --win portable --publish never
+          cp dist/Highway-Escape.exe ../Highway-Escape.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: Highway-Escape.exe
+
+  release:
+    needs: [apk, exe]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Publish APK and EXE as a release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Highway Escape (build ${{ github.run_number }})
+          body: |
+            - **Android:** download `Highway-Escape.apk` and open it on your phone to install.
+            - **Windows:** download `Highway-Escape.exe` and double-click it. No install needed. If Windows shows "Windows protected your PC", click **More info** then **Run anyway**.
+          files: |
+            out/Highway-Escape.apk
+            out/Highway-Escape.exe
+          make_latest: true
