@@ -190,6 +190,11 @@
   .rgoal { font-size: 13px; font-weight: 800; color: #3fd68a; text-align: center; }
   .rbtns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
   .rbtns .gmain { font-size: 20px; padding: 12px 6px; }
+  .offer-t { margin: 0; text-align: center; color: var(--muted); font-weight: 700; }
+  .obar { height: 6px; border-radius: 3px; background: rgba(244,241,234,0.15); overflow: hidden; }
+  .obar i { display: block; height: 100%; background: var(--paint); transform-origin: left; }
+  .tip { position: absolute; left: 50%; top: calc(116px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); width: min(460px, calc(100% - 32px)); background: var(--panel); border: 1px solid rgba(255,207,58,0.5); border-radius: 14px; padding: 10px 14px; font-size: 14px; font-weight: 700; line-height: 1.45; text-align: center; }
+  .tip b { color: var(--paint); }
   .toast { position: fixed; left: 50%; top: calc(16px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 20; background: var(--paint); color: #1a1405; font-weight: 800; border-radius: 12px; padding: 9px 16px; max-width: calc(100% - 32px); text-align: center; box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
 
   @media (max-height: 460px) {
@@ -244,6 +249,7 @@
   <div class="score"><span class="n skew" id="hudScore">0</span><div class="combo" id="hudCombo" hidden><span class="skew" id="hudComboTxt">x2 COMBO</span><div class="cbar"><i id="hudComboBar"></i></div></div></div>
   <div class="wrongway" id="wrongWay" hidden>WRONG WAY ×2</div>
   <div class="pops" id="pops"></div>
+  <div class="tip" id="tip" hidden></div>
   <div class="countdown skew" id="countdown" hidden>3</div>
   <div class="gauge">
     <svg viewBox="0 0 200 104"><path d="M14 100 A86 86 0 0 1 186 100" fill="none" stroke="rgba(244,241,234,0.16)" stroke-width="10" stroke-linecap="round"/><path id="gaugeArc" d="M14 100 A86 86 0 0 1 186 100" fill="none" stroke="#ffcf3a" stroke-width="10" stroke-linecap="round" stroke-dasharray="270.2" stroke-dashoffset="270.2"/></svg>
@@ -370,6 +376,17 @@
     <button class="gmain" id="pResume">Resume</button>
     <button class="gmain ghost" id="pRestart">Restart</button>
     <button class="gmain ghost" id="pMenu">Main menu</button>
+  </div>
+</div>
+
+<!-- ============ Continue offer ============ -->
+<div class="modal" id="scrOffer" hidden>
+  <div class="mcard">
+    <h2 class="crash skew">Crashed</h2>
+    <p class="offer-t">Keep your score and carry on from here?</p>
+    <button class="gmain" id="oContinue">Continue</button>
+    <div class="obar"><i id="oBar"></i></div>
+    <button class="gmain ghost" id="oSkip">No thanks</button>
   </div>
 </div>
 
@@ -1148,6 +1165,12 @@
     const col = save.paint[car.id] ?? car.color;
     const b = buildVehicle(playerSpec, col);
     P.mesh = b.mesh; P.wheels = b.wheels; P.fronts = b.fronts; P.wr = b.wr;
+    // brake-light glow
+    P.brakeGlow = [-1, 1].map((sx) => {
+      const g = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, color: 0xff2a2a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      g.position.set(sx * playerSpec.wid * 0.33, playerSpec.H * 0.5, playerSpec.len / 2 + 0.15); g.scale.setScalar(0.9); g.visible = false;
+      P.mesh.add(g); return g;
+    });
     scene.add(P.mesh);
     P.mesh.position.set(P.x, 0, 0);
     P.showcase = false;
@@ -1204,7 +1227,9 @@
   let mode = save.mode, tod = 'day';
   const keys = { left: 0, right: 0, gas: 0, brake: 0, nitro: 0 };
   const R = { score: 0, dist: 0, coins: 0, pickups: 0, near: 0, combo: 1, comboT: 0, bestCombo: 1, top: 0, time: 60, wrongDist: 0, nextCp: 1500, spawnT: 0, coinT: 120, canT: 500, overT: 0, crashT: 0, countT: 0 };
-  let shake = 0, slowmo = 1;
+  let shake = 0, slowmo = 1, invuln = 0, offerT = 0;
+  const buzz = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} };
+  const reviveCost = () => 300 * (R.revives + 1);
 
   function applyTimeOfDay(which) {
     tod = which === 'random' ? pick(['day', 'day', 'sunset', 'night']) : which;
@@ -1389,7 +1414,8 @@
     for (const p of particles) p.s.visible = false;
     cpGantry.visible = false; cpGantry.position.z = 9999;
     P.x = LANES[2]; P.vx = 0; P.spin = 0; P.crashVel = null;
-    Object.assign(R, { score: 0, dist: 0, coins: 0, pickups: 0, near: 0, combo: 1, comboT: 0, bestCombo: 1, top: 0, time: 60, wrongDist: 0, nextCp: 1500, spawnT: 0, coinT: 150, canT: 500, crashT: 0 });
+    Object.assign(R, { score: 0, dist: 0, coins: 0, pickups: 0, near: 0, combo: 1, comboT: 0, bestCombo: 1, top: 0, time: 60, wrongDist: 0, nextCp: 1500, spawnT: 0, coinT: 150, canT: 500, crashT: 0, revives: 0 });
+    invuln = 0; $('scrOffer').hidden = true; $('tip').hidden = true;
   }
   function startRun() {
     initAudio();
@@ -1433,6 +1459,17 @@
   $('pRestart').addEventListener('click', () => { $('scrPause').hidden = true; startRun(); });
   $('pMenu').addEventListener('click', toMenu);
   $('rRetry').addEventListener('click', startRun);
+  $('oSkip').addEventListener('click', () => { if (state !== 'offer') return; $('scrOffer').hidden = true; endRun('Crashed'); });
+  $('oContinue').addEventListener('click', () => {
+    if (state !== 'offer' || save.coins < reviveCost()) return;
+    save.coins -= reviveCost(); persist(); R.revives++;
+    $('scrOffer').hidden = true;
+    for (let i = traffic.length - 1; i >= 0; i--) { const c = traffic[i]; if (c.z > -80 && c.z < 30) { releaseTraffic(c); traffic.splice(i, 1); } }
+    P.crashVel = null; P.spin = 0; P.vx = 0;
+    P.x = LANES.reduce((a, l) => (Math.abs(l - P.x) < Math.abs(a - P.x) ? l : a), LANES[2]);
+    P.speed = Math.max(P.speed, 25); slowmo = 1; invuln = 2.5; R.comboT = 0; R.combo = 1;
+    state = 'play'; sfx.cash(); popup('Back in the race!', 'g');
+  });
   $('rMenu').addEventListener('click', toMenu);
   $('rGarage').addEventListener('click', () => { toMenu(); gIndex = CARS.findIndex((c) => c.id === save.car); show('scrGarage'); });
 
@@ -1446,7 +1483,7 @@
   function crash(c) {
     if (state !== 'play') return;
     state = 'crashed'; R.crashT = 0; slowmo = 0.3;
-    sfx.crash(); shake = 1.2;
+    sfx.crash(); shake = 1.2; buzz(250); $('tip').hidden = true;
     $('flash').style.opacity = 0.6; setTimeout(() => { $('flash').style.opacity = 0; }, 90);
     const side = c ? Math.sign(P.x - c.x) || 1 : 1;
     P.crashVel = { vx: side * rand(4, 7), spin: side * rand(2.5, 5), roll: rand(-0.6, 0.6) };
@@ -1562,7 +1599,7 @@
       // collision with the player
       if (state === 'play') {
         const dx = Math.abs(c.x - P.x), dz = Math.abs(c.z);
-        if (dx < (c.wid + pw) / 2 - 0.12 && dz < (c.len + pl) / 2 - 0.2) { crash(c); }
+        if (dx < (c.wid + pw) / 2 - 0.12 && dz < (c.len + pl) / 2 - 0.2) { if (invuln <= 0) crash(c); }
         else if (!c.passed && prevZ < 0 && c.z >= 0) {
           c.passed = true;
           const gap = dx - (c.wid + pw) / 2;
@@ -1581,6 +1618,7 @@
     R.bestCombo = Math.max(R.bestCombo, R.combo);
     const pts = Math.round(100 * R.combo * (close ? 2 : 1) * (c.dir === -1 ? 1.5 : 1));
     R.score += pts;
+    buzz(close ? 40 : 20);
     popup((close ? 'Close call' : c.dir === -1 ? 'Head-on miss' : 'Near miss') + ' +' + fmt(pts), close || R.combo > 2 ? 'y' : '');
     sfx.whoosh();
   }
@@ -1701,7 +1739,14 @@
       R.countT -= raw;
       const n = Math.ceil(R.countT - 0.2);
       if (n !== lastCount) { lastCount = n; if (n > 0) { $('countdown').textContent = n; sfx.beep(); } else { $('countdown').textContent = 'GO!'; sfx.go(); } }
-      if (R.countT <= 0) { state = 'play'; P.speed = 12; setTimeout(() => { if (state !== 'countdown') $('countdown').hidden = true; }, 600); }
+      if (R.countT <= 0) {
+        state = 'play'; P.speed = 12; setTimeout(() => { if (state !== 'countdown') $('countdown').hidden = true; }, 600);
+        if (!save.tipsSeen) {
+          save.tipsSeen = true; persist();
+          $('tip').innerHTML = isTouch ? 'Hold <b>◀ ▶</b> to steer and <b>NOS</b> for nitro. Pass close to cars above 100 km/h for <b>near miss</b> points!' : '<b>A / D</b> to steer, <b>Shift</b> for nitro. Pass close to cars above 100 km/h for <b>near miss</b> points!';
+          $('tip').hidden = false; setTimeout(() => { $('tip').hidden = true; }, 7000);
+        }
+      }
     }
     if (state === 'play') {
       updatePlayer(dt);
@@ -1727,10 +1772,15 @@
       P.x += cv.vx * dt; cv.vx *= 0.96; P.spin += cv.spin * dt; cv.spin *= 0.97;
       P.x = clamp(P.x, -RAIL_X + 1, RAIL_X - 1);
       if (Math.random() < 0.3) emit(P.x + rand(-1, 1), 0.8, rand(-1, 1), { color: 0x666666, vy: rand(1, 2), life: 1.5, size: 1, grow: 1.4, op: 0.5 });
-      if (R.crashT > 2.4) endRun('Crashed');
+      if (R.crashT > 1.8) {
+        if (save.coins >= reviveCost()) { state = 'offer'; offerT = 5; $('oContinue').innerHTML = 'Continue · <i class="coin"></i> ' + fmt(reviveCost()); $('scrOffer').hidden = false; }
+        else endRun('Crashed');
+      }
     }
-    if (state === 'result') P.speed = Math.max(0, P.speed - 8 * raw);
-    const moving = state === 'play' || state === 'crashed' || state === 'result';
+    if (state === 'offer') { offerT -= raw; $('oBar').style.transform = 'scaleX(' + Math.max(0, offerT / 5).toFixed(3) + ')'; if (offerT <= 0) { $('scrOffer').hidden = true; endRun('Crashed'); } }
+    if (state === 'result' || state === 'offer') P.speed = Math.max(0, P.speed - 8 * raw);
+    if (invuln > 0) { invuln -= dt; if (P.mesh) P.mesh.visible = invuln <= 0 || Math.floor(invuln * 10) % 2 === 0; }
+    const moving = state === 'play' || state === 'crashed' || state === 'result' || state === 'offer';
     const scroll = (moving ? P.speed : 0) * dt;
     if (state === 'menu') {
       // The showroom: the car idles on the road while light traffic passes in the far lanes
@@ -1748,7 +1798,8 @@
     // pose the player car
     if (P.mesh) {
       P.mesh.position.set(P.x, 0, 0);
-      const yaw = state === 'crashed' || state === 'result' ? P.spin : -P.vx * 0.03;
+      const yaw = state === 'crashed' || state === 'result' || state === 'offer' ? P.spin : -P.vx * 0.03;
+      if (P.brakeGlow) for (const g of P.brakeGlow) g.visible = state === 'play' && !!keys.brake;
       P.mesh.rotation.set(0, yaw, state === 'play' ? -P.vx * 0.006 : 0);
       for (const w of P.wheels) w.rotation.x -= P.speed * dt / P.wr;
       for (const f of P.fronts) f.rotation.y = state === 'play' ? (keys.right - keys.left) * -0.3 : 0;
